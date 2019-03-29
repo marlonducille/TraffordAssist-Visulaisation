@@ -1,0 +1,429 @@
+
+#   DEFINING THE LIBRARIES 
+
+library(tidyverse) ; library(sf) ; library(leaflet) ; library(htmltools)
+library(dplyr); library(janitor); library(leaflet.extras) ; library(htmlwidgets); 
+library(tseries); library(ggplot2); library(plotly); library(zoo)
+
+
+
+# -------  COLLECTING THE DATA ---------
+
+# collecting 2016/17 client dataset
+df_client_16_17 <- read.csv('TraffordAssist_ClientDetails_2016_2017.csv')
+df_client_16_17$year <- '2016/2017'
+
+# collecting 2017/18 client dataset
+df_client_17_18 <- read.csv('TraffordAssist_ClientDetails_2017_2018.csv')
+df_client_17_18$year <- '2017/2018'
+
+# collecting 2016/17 furniture dataset
+df_furniture_16_17 <- read.csv('TraffordAssist_Furniture_2016_2017.csv', colClasses=c(Application.Reference = 'character'), fileEncoding="latin1")
+
+# collecting 2017/18 furniture dataset
+df_furniture_17_18 <- read.csv('TraffordAssist_Furniture_2017_2018.csv', colClasses=c(Application.Reference = 'character'), fileEncoding="latin1")
+
+# collecting 2016/17 food dataset
+#Application.Reference is converted to character, the same data type as Application.Reference within df_client
+#in order to perform the matching using left_join
+df_food_16_17 <- read.csv('TraffordAssist_Food_2016_2017.csv', colClasses=c(Application.Reference = 'character'), fileEncoding="latin1")
+
+# collecting 2017/18 food dataset
+df_food_17_18 <- read.csv('TraffordAssist_Food_2017_2018.csv', colClasses=c(Application.Reference = 'character'), fileEncoding="latin1")
+
+# collecting 2016/17 pay point dataset
+df_paypoint_16_17 <- read.csv('TraffordAssist_PayPoint_2016_2017.csv', colClasses=c(Application.Reference = 'character'), fileEncoding="latin1")
+
+# collecting 2017/18 paypoint dataset
+df_paypoint_17_18 <- read.csv('TraffordAssist_PayPoint_2017_2018.csv', colClasses=c(Application.Reference = 'character'), fileEncoding="latin1")
+
+# load postcode data (Source: ONS Postcode Directory)
+postcodes <- read_csv("trafford_postcodes_2018-11.csv")
+
+
+# -------- ASSIGNING CATEGORIES ------------
+
+df_furniture_16_17$category <- 'furniture'
+df_furniture_17_18$category <- 'furniture'
+df_food_16_17$category <- 'food'
+df_food_17_18$category <- 'food'
+df_paypoint_16_17$category <- 'paypoint'
+df_paypoint_17_18$category <- 'paypoint'
+
+
+
+# ------------   SELECTING RELEVANT COLUMNS FROM THE DATA ----------------
+
+# select a subset of columns from the 2016/17 client dataset
+df_client_16_17 <- df_client_16_17 %>% select(Application.Reference, Customer.Name, Caseworker, Age, Gender,
+                                              Postcode, Date.application.received..dd.mm.yyyy., 
+                                              Date.of.Decision..dd.mm.yyyy., Month, year)
+
+
+colnames(df_client_16_17) <- c('application_ref', 'customer_name', 'user', 'age', 'gender', 'postcode', 
+                               'application_received_date', 'application_processed_date', 'month', 'year')
+
+# select a subset of columns from the 2017/18 client dataset
+df_client_17_18  <- df_client_17_18  %>% select(Application.Reference, Customer.Name, User, Age, X,
+                                                Postcode, App.Date, Processed.Date, Month, year)
+
+
+colnames(df_client_17_18) <- c('application_ref', 'customer_name', 'user', 'age', 'gender', 'postcode', 
+                               'application_received_date', 'application_processed_date', 'month', 'year')
+
+
+# select a subset of columns from the 2016/17 furniture dataset
+df_furniture_16_17 <- df_furniture_16_17 %>% select(Application.Reference, category)
+colnames(df_furniture_16_17) <- c('application_ref', 'category')
+
+# select a subset of columns from the 2017/18 furniture dataset
+df_furniture_17_18 <- df_furniture_17_18 %>% select(Application.Reference, category)
+colnames(df_furniture_17_18) <- c('application_ref', 'category')
+
+# select a subset of columns from the 2016/17 food dataset
+df_food_16_17 <- df_food_16_17 %>% select(Application.Reference, category)
+colnames(df_food_16_17) <- c('application_ref', 'category')
+
+# select a subset of columns from the 2017/18 food dataset
+df_food_17_18 <- df_food_17_18 %>% select(Application.Reference, category)
+colnames(df_food_17_18) <- c('application_ref', 'category')
+
+# select a subset of columns from the 2016/17 pay point dataset
+df_paypoint_16_17 <- df_paypoint_16_17 %>% select(Application.Reference, category)
+colnames(df_paypoint_16_17) <- c('application_ref', 'category')
+
+# select a subset of columns from the 2017/18 pay point dataset
+df_paypoint_17_18 <- df_paypoint_17_18 %>% select(Application.Reference, category)
+colnames(df_paypoint_17_18) <- c('application_ref', 'category')
+
+
+# ----------- MERGING DATASETS ------------
+
+# combinding 2016/17 AND 2017/18 client dataset
+df_client <- rbind(df_client_16_17, df_client_17_18)
+
+# combinding 2016/17 AND 2017/18 furniture dataset and remove NA
+df_furniture <- rbind(df_furniture_16_17, df_furniture_17_18)
+df_furniture <- df_furniture[!is.na(df_furniture$application_ref), ]
+
+# combinding  2016/17 and 2017/18 food dataset and remove NA
+df_food <- rbind(df_food_16_17, df_food_17_18)
+df_food <- df_food[!is.na(df_food$application_ref), ]
+
+# combinding  2016/17 and 2017/18 paypoint dataset and remove NA
+df_paypoint <- rbind(df_paypoint_16_17, df_paypoint_17_18)
+df_paypoint <- df_paypoint[!is.na(df_paypoint$application_ref), ]
+
+# combinding all category data
+df_category <- rbind(df_furniture, df_food, df_paypoint)
+
+# get just the unique categories
+df_category <- unique(df_category)
+
+# joining client dataset with furniture, food and paypoint datasets to obtain the category
+df <- unique(df_client)
+df <- left_join(df, df_category, by = "application_ref")
+
+
+
+# ----------- LINKING WITH POSTCODE DATASET AND FILTERING TRAFFORD ASSIST DATASET TO CREATE THE FINAL DATASETS -------------
+
+
+# clean the postcode from the dataset
+df$postcode <- toupper(df$postcode)
+df$postcode <- gsub("/FURN", "", df$postcode)
+
+# match postcodes to retrieve coordinates
+geo <- left_join(df, postcodes, by = "postcode")
+
+# setting up the 'WHERE' condition to filter the dataset
+geomatch_condition <- !is.na(geo$area_name)
+geo_match_found <- geo[which(geomatch_condition), ]
+geo_no_match_found <- geo[-which(geomatch_condition),]
+
+# further cleansing on the geo dataset 
+df_final <- geo[which(geomatch_condition | geo$postcode == 'NFA'), ]
+df_final <- df_final[which(!is.na(df_final$category)), ]
+
+#dataframe filtered by furniture
+df_final_furniture <- df_final[df_final$category == 'furniture', ]
+
+#dataframe filtered by food
+df_final_food <- df_final[df_final$category == 'food', ]
+
+#dataframe filtered by paypoint
+df_final_paypoint <- df_final[df_final$category == 'paypoint', ]
+
+
+
+# ------- PREPARING DATASETS FOR CREATING CHOROPLETH MAP -------------
+
+# convert to spatial object 
+sf <- df_final %>% st_as_sf(crs = 4326, coords = c("lon", "lat"), na.fail=FALSE)
+
+# building  dataframes of ward name and number of applications per ward, for each categories
+wards <- levels(factor(df_final$area_name))
+
+wards_df_all <- data.frame(matrix(ncol = 2))
+wards_df_furniture <- data.frame(matrix(ncol = 2))
+wards_df_food <- data.frame(matrix(ncol = 2))
+wards_df_paypoint <- data.frame(matrix(ncol = 2))
+
+colnames(wards_df_all) <- c('ward_name', 'num_of_applications')
+colnames(wards_df_furniture) <- c('ward_name', 'num_of_applications')
+colnames(wards_df_food) <- c('ward_name', 'num_of_applications')
+colnames(wards_df_paypoint) <- c('ward_name', 'num_of_applications')
+
+i = 1
+for(w in wards){
+  wards_df_all[i,1] <- w
+  wards_df_furniture[i,1] <- w
+  wards_df_food[i,1] <- w
+  wards_df_paypoint[i,1] <- w
+  
+  wards_df_all[i, 2] <- nrow(df_final[which(!is.na(df_final$area_name) & df_final$area_name == w),])
+  wards_df_furniture[i, 2] <- nrow(df_final_furniture[which(!is.na(df_final_furniture$area_name) & df_final_furniture$area_name == w),])
+  wards_df_food[i, 2] <- nrow(df_final_food[which(!is.na(df_final_food$area_name) & df_final_food$area_name == w),])
+  wards_df_paypoint[i, 2] <- nrow(df_final_paypoint[which(!is.na(df_final_paypoint$area_name) & df_final_paypoint$area_name == w),])
+  
+  i = i + 1
+}
+
+
+# load the ward data for great britain
+sf_gb <- st_read("Wards_December_2017_Super_Generalised_Clipped_Boundaries_in_Great_Britain.geojson", quiet = TRUE)
+
+# filter to retrieve only the wards in Trafford
+lookup <- read_csv("Ward_to_Local_Authority_District_December_2017_Lookup_in_the_United_Kingdom.csv") %>%
+  filter(LAD17NM %in% c("Trafford")) %>%
+  pull(WD17CD)
+
+sf_trafford <- sf_gb %>% filter(wd17cd %in% lookup)
+#plot(st_geometry(sf_trafford))
+
+names(sf_trafford)[2] <- 'area_code'
+names(sf_trafford)[3] <- 'ward_name'
+names(sf_trafford)[7] <- 'lon'
+
+# merge Trafford Assist data (containing the ward name and the number of applications per ward) with Trafford Spatial data
+sf_trafford_all <- left_join(sf_trafford, wards_df_all, by = "ward_name")
+sf_trafford_furniture <- left_join(sf_trafford, wards_df_furniture, by = "ward_name")
+sf_trafford_food <- left_join(sf_trafford, wards_df_food, by = "ward_name")
+sf_trafford_paypoint <- left_join(sf_trafford, wards_df_paypoint, by = "ward_name")
+
+
+
+# ------- CREATING THE CHOROPLETH MAP -------------
+
+map <- leaflet() %>% 
+  setView(-2.35533522781156, 53.419025498197, zoom = 12) %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addPolylines(data = sf_trafford_all, stroke = TRUE, weight = 2, color = "#212121", opacity = 1) %>%
+  addPolygons(data = sf_trafford_all, group = 'All', fillColor = ~colorQuantile("RdPu", domain = num_of_applications, probs = seq(0, 1, length.out = 8))(num_of_applications), weight = 2, opacity = 1, color = "white", dashArray = "3", fillOpacity = 0.7,
+              highlight = highlightOptions(weight = 3, color = "#000", dashArray = "", fillOpacity = 0.7, bringToFront = TRUE),
+              label = sprintf("<strong>%s</strong><br/>%g applications", sf_trafford_all$ward_name, sf_trafford_all$num_of_applications ) %>% lapply(htmltools::HTML), 
+              labelOptions = labelOptions(style = list("font-weight" = "normal", padding = "3px 8px"), textsize = "15px", direction = "auto")) %>%
+  addPolygons(data = sf_trafford_furniture, group = 'Furniture', fillColor = ~colorQuantile("RdPu", domain = num_of_applications, probs = seq(0, 1, length.out = 8))(num_of_applications), weight = 2, opacity = 1, color = "white", dashArray = "3", fillOpacity = 0.7,
+              highlight = highlightOptions(weight = 3, color = "#000", dashArray = "", fillOpacity = 0.7, bringToFront = TRUE),
+              label = sprintf("<strong>%s</strong><br/>%g applications", sf_trafford_furniture$ward_name, sf_trafford_furniture$num_of_applications ) %>% lapply(htmltools::HTML), 
+              labelOptions = labelOptions(style = list("font-weight" = "normal", padding = "3px 8px"), textsize = "15px", direction = "auto")) %>%
+  addPolygons(data = sf_trafford_food, group = 'Food', fillColor = ~colorQuantile("RdPu", domain = num_of_applications, probs = seq(0, 1, length.out = 8))(num_of_applications), weight = 2, opacity = 1, color = "white", dashArray = "3", fillOpacity = 0.7,
+              highlight = highlightOptions(weight = 3, color = "#000", dashArray = "", fillOpacity = 0.7, bringToFront = TRUE),
+              label = sprintf("<strong>%s</strong><br/>%g applications", sf_trafford_food$ward_name, sf_trafford_food$num_of_applications ) %>% lapply(htmltools::HTML), 
+              labelOptions = labelOptions(style = list("font-weight" = "normal", padding = "3px 8px"), textsize = "15px", direction = "auto")) %>%
+  addPolygons(data = sf_trafford_paypoint, group = 'Paypoint', fillColor = ~colorQuantile("RdPu", domain = num_of_applications, probs = seq(0, 1, length.out = 8))(num_of_applications), weight = 2, opacity = 1, color = "white", dashArray = "3", fillOpacity = 0.7,
+              highlight = highlightOptions(weight = 3, color = "#000", dashArray = "", fillOpacity = 0.7, bringToFront = TRUE),
+              label = sprintf("<strong>%s</strong><br/>%g applications", sf_trafford_paypoint$ward_name, sf_trafford_paypoint$num_of_applications ) %>% lapply(htmltools::HTML), 
+              labelOptions = labelOptions(style = list("font-weight" = "normal", padding = "3px 8px"), textsize = "15px", direction = "auto")) %>%
+  addLegend(data = sf_trafford_all, pal = colorQuantile("RdPu", domain = sf_trafford_all$num_of_applications, probs = seq(0, 1, length.out = 8)), 
+            values = ~sf_trafford_all$num_of_applications, opacity = 0.7, title = NULL, position = "bottomright") 
+
+map <- map %>% 
+  addLayersControl(baseGroups = c("All", "Furniture", "Food", "Paypoint"),
+                   #overlayGroups = tiers,
+                   options = layersControlOptions(collapsed = FALSE),
+                   position = "bottomleft")
+
+
+# ---------- PREPARING DATASET FOR TIME SERIES LINE GRAPH
+
+time_df <- data.frame(matrix(ncol = 3))
+colnames(time_df) <- c('year', 'month', 'num_of_applications')
+
+years <- c('2016', '2017', '2018')
+months <- c(4,5,6,7,8,9,10,11,12,1,2,3)
+for(m in months){
+  date <- as.Date(df_final$application_received_date,'%d/%m/%Y')
+  month <- format(date,'%m')
+  year <- format(date,'%Y')
+  
+}
+
+# create a dataframe of the all dates for an application, and create a thrid column with a frequency of 1
+df_date <- as.Date(df_final$application_received_date,'%d/%m/%Y')
+d_df <- data.frame(format(date,'%Y'), format(date,'%m'), as.integer(1))
+colnames(d_df) <- c('year', 'month', 'freq')
+
+# group the dates by year (Group.1) and month (Group.2) and apply a sum function 
+# to determine the number of applications for each month in each year
+d_df_agg = aggregate(d_df$freq, by = list(d_df$year, d_df$month), FUN = sum)
+d_df_agg <- d_df_agg[order(d_df_agg$Group.1, d_df_agg$Group.2),]
+d_df_agg <- d_df_agg[5:28,]
+
+# convert the dataset into a time series data
+d_ts <- ts(d_df_agg$x, start = c(2016, 4), end = c(2018, 3), frequency = 12)
+
+# convert the time series data into a dataframe to be used by ggplot function
+d_df_ts <- data.frame(y=d_df_agg$x, x=time(d_ts), year=d_df_agg$Group.1, month=d_df_agg$Group.2, month_year=as.yearmon(paste(d_df_agg$Group.1, d_df_agg$Group.2, sep = "-")))
+
+
+
+# ---------------- CREATING THE TIME SERIES LINE GRAPH ------------
+
+#pl <- plot(d_ts, xlab='year', ylab='frequency')
+
+pl <- ggplot(d_df_ts, aes(as.Date(x), y)) + 
+  geom_line() + 
+  labs(x='year', y='No of applications', title='Plot of number of applications between April 2016 and March 2018')
+
+ts_tooltip = paste("Number of applications: ", d_df_ts$y, "\n", "Date: ", d_df_ts$month_year )
+
+pp <- plotly_build(pl)
+ts_graph <- style( pp, text=ts_tooltip, hoverinfo = "text")
+
+
+
+# -------------- CREATING BAR PLOTS -----------------
+
+# bar plots - food
+pl_b_fo <- ggplot(wards_df_food, aes(x=ward_name, y=num_of_applications, fill=as.factor(wards_df_food$ward_name))) + 
+  geom_bar(stat='identity') + 
+  theme_bw() +
+  theme(axis.text.x=element_blank(), legend.position = 'none')  +
+  labs(x='wards', y='No of applications', title='Plot of number of food applications per ward for 2016/17 - 2017/18', fill= NULL)
+
+b_fo_graph <- ggplotly(pl_b_fo, tooltip = c('ward_name', 'num_of_applications'))
+
+# bar plots - furniture
+pl_b_fu <- ggplot(wards_df_furniture, aes(x=ward_name, y=num_of_applications, fill=as.factor(wards_df_furniture$ward_name))) + 
+  geom_bar(stat='identity') + 
+  theme_bw() +
+  theme(axis.text.x=element_blank(), legend.position = 'none')  +
+  labs(x='wards', y='No of applications', title='Plot of number of furniture applications per ward for 2016/17 - 2017/18', fill=NULL)
+
+b_fu_graph <- ggplotly(pl_b_fu, tooltip = c('ward_name', 'num_of_applications'))
+
+# bar plots - paypoint
+pl_b_pp <- ggplot(wards_df_paypoint, aes(x=ward_name, y=num_of_applications, fill=as.factor(wards_df_paypoint$ward_name))) + 
+  geom_bar(stat='identity') + 
+  theme_bw() +
+  theme(axis.text.x=element_blank(), legend.position = 'none')  +
+  labs(x='wards', y='No of applications', title='Plot of number of pay point applications per ward for 2016/17 - 2017/18', fill=NULL)
+
+
+b_pp_graph <- ggplotly(pl_b_pp, tooltip = c('ward_name', 'num_of_applications'))
+
+# bar plots - all
+pl_b_all <- ggplot(wards_df_all, aes(x=ward_name, y=num_of_applications, fill=as.factor(wards_df_paypoint$ward_name))) + 
+  geom_bar(stat='identity') + 
+  theme(axis.text.x=element_blank()) + 
+  labs(x='wards', y='No of applications', title='Plot of number of applications per ward for 2016/17 - 2017/18', fill=NULL) +
+  ylim(-100,700) +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank()
+    #plot.margin = unit(rep(-2,4), "cm")     # This remove unnecessary margin around plot
+  ) +
+  coord_polar(start = 0) 
+
+
+map
+
+
+ts_graph
+
+b_fo_graph
+
+
+b_fu_graph
+
+
+b_pp_graph
+
+
+pl_b_all
+
+
+
+  
+
+
+# convert to spatial object
+sf <- df_final %>% st_as_sf(crs = 4326, coords = c("lon", "lat"), na.fail=FALSE)
+
+# create popup
+# create popup
+popup <- paste0(
+  "<div class='popupContainer'>",
+  "<h3>", sf$df_final.customer_name, "</h3>",
+  "<table class='popupLayout'>",
+  "<tr>",
+  "<td>Application date</td>",
+  "<td>", df_final$application_received_date, "</td>",
+  "</tr>",
+  "<tr>",
+  "<td>Processed date</td>",
+  "<td>", df_final$application_processed_date, "</td>",
+  "</tr>",
+  "<tr>",
+  "<td>Postcode</td>",
+  "<td>", df_final$postcode, "</td>",
+  "</tr>",
+  "<tr>",
+  "<td>Ward</td>",
+  "<td>", df_final$area_name, "</td>",
+  "</tr>",
+  "</table>",
+  "</div>"
+)
+# --- create map
+# load vector boundary layer (Source: ONS Open Geography Portal)
+bdy <- st_read("ons_geo_boundary.geojson")
+
+#create choropleth map
+sf_gb <- st_read("Wards_December_2017_Super_Generalised_Clipped_Boundaries_in_Great_Britain.geojson", quiet = TRUE)
+
+map <- leaflet(height = "100%", width = "100%") %>% 
+  setView(-2.35533522781156, 53.419025498197, zoom = 12) %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolygons()
+
+
+
+map <- leaflet(height = "100%", width = "100%") %>% 
+  setView(-2.35533522781156, 53.419025498197, zoom = 12) %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addPolylines(data = bdy, stroke = TRUE, weight = 2, color = "#212121", opacity = 1) %>% 
+  addMarkers(data = sf, popup = popup) %>% 
+  addControl("<strong>Title</strong><br /><em>Source: </em>", position = 'topright')
+
+# apply CSS
+browsable(
+  tagList(list(
+    tags$head(
+      tags$style("
+                 html, body {height: 100%;margin: 0;}
+                 .leaflet-control-layers-toggle {height: 44; width: 44;}
+                 .leaflet-bar a, .leaflet-bar a:hover, .leaflet-touch .leaflet-bar a, .leaflet-touch .leaflet-bar a:hover {height: 34px; width: 34px; line-height: 34px;}
+                 .info {width: 300px;}
+                 .popupContainer{overflow: scroll;}
+                 .popupLayout{width: 100%;}
+                 .popupLayout td{vertical-align: top; border-bottom: 1px dotted #ccc; padding: 3px;}
+                 .popupLayout td:nth-child(1){width: 1%; font-weight: bold; white-space: nowrap;}
+                 ")
+      ),
+    map
+      ))
+  )
